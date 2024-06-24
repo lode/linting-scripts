@@ -25,6 +25,7 @@ To get started clone the repository and copy to your own repository:
 - `phpstan.bonus.neon`
 - `rector.php`
 - `.github/workflows/lint.yml`
+- the Usage section of this readme to your own documentation, e.g. `script/README.md`
 
 And install composer packages for the linters:
 
