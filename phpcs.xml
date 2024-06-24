@@ -11,9 +11,11 @@
     <arg name="parallel" value="75"/>
     <arg value="s"/> <!-- Show sniff error codes in all reports. -->
 
-    <!-- Define rules -->
-    <!-- @see rules:   https://gist.github.com/lode/1187f45ecf6146102927f04c6ba9b7ab -->
-    <!-- @see options: https://github.com/PHPCSStandards/PHP_CodeSniffer/wiki/Customisable-Sniff-Properties -->
+    <!--
+        Define rules
+        @see rules:   https://gist.github.com/lode/1187f45ecf6146102927f04c6ba9b7ab
+        @see options: https://github.com/PHPCSStandards/PHP_CodeSniffer/wiki/Customisable-Sniff-Properties
+    -->
 
     <rule ref="PSR12"/>
     <rule ref="Generic.PHP.Syntax"/>

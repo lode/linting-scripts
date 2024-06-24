@@ -102,6 +102,8 @@ fi
 # gather files to test
 if test "$HAS_EVERYTHING" = 1; then
     FILE_FILTER=""
+    FILE_FILTER_TWIG="."
+    FILE_FILTER_YAML="."
 else
     # get names of files changed in this branch
     DIFF_FILE_NAMES=`git diff FETCH_HEAD --name-only --diff-filter=d`
@@ -145,9 +147,9 @@ if test "$HAS_TYPE" = 1; then
 
     elif test "$TYPE" = "phpcs"; then
         if test "$HAS_BONUS" = 1; then
-            $CONSOLE_PREFIX ./vendor/bin/phpcs --standard=phpcs.bonus.xml $EXTRA_ARGUMENTS $FILE_FILTER
+            $CONSOLE_PREFIX ./vendor/bin/phpcs --standard=phpcs.bonus.xml -p $EXTRA_ARGUMENTS $FILE_FILTER
         else
-            $CONSOLE_PREFIX ./vendor/bin/phpcs $EXTRA_ARGUMENTS $FILE_FILTER
+            $CONSOLE_PREFIX ./vendor/bin/phpcs -p $EXTRA_ARGUMENTS $FILE_FILTER
         fi
 
     elif test "$TYPE" = "phpstan"; then
@@ -163,13 +165,15 @@ if test "$HAS_TYPE" = 1; then
 
     elif test "$TYPE" = "twig" && test ! -z "$SYMFONY_PREFIX"; then
         if test -z "$FILE_FILTER_TWIG"; then
-            FILE_FILTER_TWIG="templates"
+            echo "${T_ERROR}No twig files changed${T_RESET}"
+            exit 1
         fi
         $SYMFONY_PREFIX lint:twig $FILE_FILTER_TWIG $EXTRA_ARGUMENTS
 
     elif test "$TYPE" = "yaml" && test ! -z "$SYMFONY_PREFIX"; then
         if test -z "$FILE_FILTER_YAML"; then
-            FILE_FILTER_YAML="."
+            echo "${T_ERROR}No yaml files changed${T_RESET}"
+            exit 1
         fi
         $SYMFONY_PREFIX lint:yaml $FILE_FILTER_YAML $EXTRA_ARGUMENTS
 
