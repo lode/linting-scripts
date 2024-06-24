@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="vendor/squizlabs/php_codesniffer/phpcs.xsd">
+    <file>.</file>
+
+    <exclude-pattern>./vendor/*</exclude-pattern>
+
+    <arg name="basepath" value="."/>
+    <arg name="cache" value=".phpcs-cache"/>
+    <arg name="colors"/>
+    <arg name="extensions" value="php"/>
+    <arg name="parallel" value="75"/>
+    <arg value="s"/> <!-- Show sniff error codes in all reports. -->
+
+    <!-- Define rules -->
+    <!-- @see rules:   https://gist.github.com/lode/1187f45ecf6146102927f04c6ba9b7ab -->
+    <!-- @see options: https://github.com/PHPCSStandards/PHP_CodeSniffer/wiki/Customisable-Sniff-Properties -->
+
+    <rule ref="Generic.Metrics.CyclomaticComplexity"/>
+    <rule ref="Generic.Metrics.NestingLevel"/>
+</ruleset>

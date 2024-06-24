@@ -1,0 +1,237 @@
+#!/usr/bin/env bash
+
+set -e
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+cd $SCRIPT_DIR/..
+
+# whether to run bonus levels by default, or only when requested
+BONUS_DEFAULT=0
+
+# check if symfony is available
+# @see https://github.com/lode/playground
+SYMFONY_PREFIX=""
+if test -f ./script/symfony; then
+    SYMFONY_PREFIX="./script/symfony"
+elif test -f ./bin/console; then
+    SYMFONY_PREFIX="./bin/console"
+fi
+
+# docker configured and not inside docker
+# @see https://github.com/lode/playground
+CONSOLE_PREFIX=""
+CONSOLE_PREFIX_WITHOUT_TTY=""
+if test -f ./docker.env && test -f ./script/console && test ! -f /.dockerenv; then
+    ENVIRONMENT_FILES="--env-file docker.env.dist --env-file docker.env"
+    CONSOLE_PREFIX="./script/console"
+    CONSOLE_PREFIX_WITHOUT_TTY="docker compose $ENVIRONMENT_FILES exec --no-TTY --user developer php-fpm"
+fi
+
+# colors and fonts, only loaded on interactive terminals
+if [ -t 0 ]; then
+    T_ERROR=$(tput setaf 7; tput setab 1)
+    T_INFO=$(tput setaf 7; tput setab 4)
+    T_WARNING=$(tput setaf 0; tput setab 3)
+    T_SUCCESS=$(tput setaf 0; tput setab 2)
+    T_BOLD=$(tput bold)
+    T_RESET=$(tput sgr0)
+fi
+
+if test "$1" = "--help"; then
+    echo "${T_INFO}./script/lint [<type>] [--bonus] [--no-bonus] [--everything] [extra arguments]${T_RESET}"
+    echo 'Runs linters, defaults to phpcs and phpstan on the *git-diff* between the base and the head branch'
+    echo ''
+    echo "${T_BOLD}<type>${T_RESET}"
+    echo 'Optional, if set it runs on the *changed files* (not only git-diff) between the base and the head branch'
+    echo '- phpcs'
+    echo '- phpstan'
+    echo '- rector'
+    if test ! -z "$SYMFONY_PREFIX"; then
+        echo '- container (assumes --everything)'
+    fi
+    echo '- commented (assumes --everything)'
+    if test ! -z "$SYMFONY_PREFIX"; then
+        echo '- twig'
+        echo '- yaml'
+    fi
+    echo ''
+    echo "${T_BOLD}--bonus${T_RESET}"
+    echo "${T_BOLD}--no-bonus${T_RESET}"
+    echo 'Optional, if set it includes/excludes linters on more strict levels (can be used with or without specific type)'
+    echo 'Default behavior can be changed with `BONUS_DEFAULT` variable in `script/lint` file'
+    echo ''
+    echo "${T_BOLD}--everything${T_RESET}"
+    echo 'Optional, if set it runs on the *whole codebase* instead of the diff/changed-files (ignored when no type is given)'
+    echo ''
+    echo "${T_BOLD}extra arguments${T_RESET}"
+    echo 'Optional, passed to the linter of the specified type (ignored when no type is given)'
+    echo ''
+    echo "${T_INFO}./script/lint --list-files${T_RESET}"
+    echo 'Shows the files it will run the linter on'
+    echo ''
+    echo "${T_INFO}./script/lint --help${T_RESET}"
+    echo 'Shows this help'
+    exit 0
+fi
+
+# check arguments
+(test "$1" = "--list-files") && HAS_LIST_FILES=1 || HAS_LIST_FILES=0
+(test "$2" = "--everything" || test "$3" = "--everything") && HAS_EVERYTHING=1 || HAS_EVERYTHING=0
+(test "$1" = "--bonus" || test "$2" = "--bonus" || test "$3" = "--bonus") && BONUS_REQUESTED=1 || BONUS_REQUESTED=0
+(test "$1" = "--no-bonus" || test "$2" = "--no-bonus" || test "$3" = "--no-bonus") && BONUS_REJECTED=1 || BONUS_REJECTED=0
+(test "$#" -gt 0 && test "$1" != "--bonus" && test "$1" != "--no-bonus" && test "$1" != "--list-files" && test "$1" != "--everything") && HAS_TYPE=1 || HAS_TYPE=0
+(test "$BONUS_REJECTED" = 0 && (test "$BONUS_REQUESTED" = 1 || test "$BONUS_DEFAULT" = 1)) && HAS_BONUS=1 || HAS_BONUS=0
+
+# store type and its extra arguments
+TYPE=""
+EXTRA_ARGUMENTS=""
+if test "$HAS_TYPE" = 1; then
+    TYPE="$1"
+    EXTRA_ARGUMENTS="${@:2}"
+
+    if (test "$BONUS_REQUESTED" = 1 || test "$BONUS_REJECTED" = 1) && test "$HAS_EVERYTHING" = 1; then
+        EXTRA_ARGUMENTS="${@:4}"
+    elif test "$BONUS_REQUESTED" = 1 || test "$BONUS_REJECTED" = 1 || test "$HAS_EVERYTHING" = 1; then
+        EXTRA_ARGUMENTS="${@:3}"
+    fi
+
+    if test -n "$EXTRA_ARGUMENTS"; then
+        echo "${T_INFO}Running $TYPE with extra arguments: $EXTRA_ARGUMENTS${T_RESET}"
+    fi
+fi
+
+# gather files to test
+if test "$HAS_EVERYTHING" = 1; then
+    FILE_FILTER=""
+else
+    # get names of files changed in this branch
+    DIFF_FILE_NAMES=`git diff FETCH_HEAD --name-only --diff-filter=d`
+    if test -z "$DIFF_FILE_NAMES"; then
+        echo "${T_WARNING}No files changed${T_RESET}"
+        exit 0
+    fi
+
+    # get twig specific files
+    DIFF_FILE_NAMES_TWIG=`git diff FETCH_HEAD --name-only --diff-filter=d -- '*.twig'`
+
+    # get yaml specific files
+    DIFF_FILE_NAMES_YAML=`git diff FETCH_HEAD --name-only --diff-filter=d -- '*.yaml' '*.yml'`
+
+    # convert filenames with newlines to filenames with spaces
+    FILE_FILTER="${DIFF_FILE_NAMES//$'\n'/ }"
+    FILE_FILTER_TWIG="${DIFF_FILE_NAMES_TWIG//$'\n'/ }"
+    FILE_FILTER_YAML="${DIFF_FILE_NAMES_YAML//$'\n'/ }"
+
+    if test "$HAS_LIST_FILES" = 1; then
+        echo "${T_INFO}All files:${T_RESET}"
+        echo "$DIFF_FILE_NAMES"
+        echo ''
+        echo "${T_INFO}Twig files:${T_RESET}"
+        echo "$DIFF_FILE_NAMES_TWIG"
+        echo ''
+        echo "${T_INFO}YAML files:${T_RESET}"
+        echo "$DIFF_FILE_NAMES_YAML"
+        exit 0
+    fi
+fi
+
+if test "$HAS_TYPE" = 1; then
+    if test "$TYPE" = "commented"; then
+        # can only work on file _paths_, thus we assume `--everything`
+        $CONSOLE_PREFIX ./vendor/bin/swiss-knife check-commented-code . $EXTRA_ARGUMENTS
+
+    elif test "$TYPE" = "container" && test ! -z "$SYMFONY_PREFIX"; then
+        # doesn't work with specific paths, thus we assume `--everything`
+        $SYMFONY_PREFIX lint:container $EXTRA_ARGUMENTS
+
+    elif test "$TYPE" = "phpcs"; then
+        if test "$HAS_BONUS" = 1; then
+            $CONSOLE_PREFIX ./vendor/bin/phpcs --standard=phpcs.bonus.xml $EXTRA_ARGUMENTS $FILE_FILTER
+        else
+            $CONSOLE_PREFIX ./vendor/bin/phpcs $EXTRA_ARGUMENTS $FILE_FILTER
+        fi
+
+    elif test "$TYPE" = "phpstan"; then
+        if test "$HAS_BONUS" = 1; then
+            $CONSOLE_PREFIX ./vendor/bin/phpstan analyse --configuration=phpstan.bonus.neon -v $EXTRA_ARGUMENTS $FILE_FILTER
+        else
+            $CONSOLE_PREFIX ./vendor/bin/phpstan analyse --configuration=phpstan.neon -v $EXTRA_ARGUMENTS $FILE_FILTER
+        fi
+
+    elif test "$TYPE" = "rector"; then
+        echo "${T_WARNING}Rector might not produce correct results until phpstan is on level 4 on the master branch${T_RESET}"
+        $CONSOLE_PREFIX ./vendor/bin/rector process --dry-run $EXTRA_ARGUMENTS $FILE_FILTER
+
+    elif test "$TYPE" = "twig" && test ! -z "$SYMFONY_PREFIX"; then
+        if test -z "$FILE_FILTER_TWIG"; then
+            FILE_FILTER_TWIG="templates"
+        fi
+        $SYMFONY_PREFIX lint:twig $FILE_FILTER_TWIG $EXTRA_ARGUMENTS
+
+    elif test "$TYPE" = "yaml" && test ! -z "$SYMFONY_PREFIX"; then
+        if test -z "$FILE_FILTER_YAML"; then
+            FILE_FILTER_YAML="."
+        fi
+        $SYMFONY_PREFIX lint:yaml $FILE_FILTER_YAML $EXTRA_ARGUMENTS
+
+    else
+        echo "${T_ERROR}Unknown type specified: $TYPE${T_RESET}"
+        exit 1
+    fi
+else
+    if test ! -z "$SYMFONY_PREFIX" && (test -n "$FILE_FILTER_TWIG" || test -n "$FILE_FILTER_YAML"); then
+        echo -e "${T_BOLD}Running checks on the git changed lines between the base and the head branch${T_RESET}\n"
+
+        if test -n "$FILE_FILTER_TWIG"; then
+            echo "${T_INFO}Checking twig templates (symfony)${T_RESET}"
+            $SYMFONY_PREFIX lint:twig $FILE_FILTER_TWIG 2> /dev/null && echo "${T_SUCCESS}Success${T_RESET}"
+            echo -e '\n'
+        fi
+
+        if test -n "$FILE_FILTER_YAML"; then
+            echo "${T_INFO}Checking yaml (symfony)${T_RESET}"
+            $SYMFONY_PREFIX lint:yaml $FILE_FILTER_YAML 2> /dev/null && echo "${T_SUCCESS}Success${T_RESET}"
+            echo -e '\n'
+        fi
+    fi
+
+    echo -e "${T_BOLD}Running checks on the git-diff between the base and the head branch${T_RESET}\n"
+
+    if test ! -f ./vendor/bin/reviewdog; then
+        echo -e "${T_INFO}Installing reviewdog (in /vendor/bin/reviewdog) to lint changes only, this is one-time only${T_RESET}\n"
+        curl -sfL https://raw.githubusercontent.com/reviewdog/reviewdog/master/install.sh | sh -s -- -b ./vendor/bin
+        echo -e '\n'
+    fi
+
+    echo "${T_INFO}Checking coding standards (phpcs)${T_RESET}"
+    $CONSOLE_PREFIX_WITHOUT_TTY ./vendor/bin/phpcs --report=checkstyle $FILE_FILTER \
+        | $CONSOLE_PREFIX_WITHOUT_TTY ./vendor/bin/reviewdog -f=checkstyle -reporter=local -diff="git diff FETCH_HEAD" -fail-on-error 2> /dev/null \
+        && echo "${T_SUCCESS}Success${T_RESET}"
+    echo -e '\n'
+
+    echo "${T_INFO}Checking static analysis (phpstan)${T_RESET}"
+    $CONSOLE_PREFIX_WITHOUT_TTY ./vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress --error-format=checkstyle $FILE_FILTER \
+        | $CONSOLE_PREFIX_WITHOUT_TTY ./vendor/bin/reviewdog -f=checkstyle -reporter=local -diff="git diff FETCH_HEAD" -fail-on-error 2> /dev/null \
+        && echo "${T_SUCCESS}Success${T_RESET}"
+    echo -e '\n'
+
+    echo "${T_INFO}Checking refactors (rector)${T_RESET}"
+    echo "${T_WARNING}Rector might not produce correct results until phpstan is on level 4 on the master branch${T_RESET}"
+    ./vendor/bin/rector process --memory-limit=4g --dry-run $FILE_FILTER 2> /dev/null \
+        && echo "${T_SUCCESS}Success${T_RESET}"
+
+    if test "$HAS_BONUS" = 1; then
+        echo -e '\n'
+        echo -e "${T_BOLD}Running bonus checks${T_RESET}\n"
+
+        echo "${T_INFO}Checking coding standards (phpcs --bonus)${T_RESET}"
+        $CONSOLE_PREFIX_WITHOUT_TTY ./vendor/bin/phpcs --report=checkstyle --standard=phpcs.bonus.xml $FILE_FILTER \
+            | $CONSOLE_PREFIX_WITHOUT_TTY ./vendor/bin/reviewdog -f=checkstyle -reporter=local -diff="git diff FETCH_HEAD" -fail-on-error 2> /dev/null \
+            && echo "${T_SUCCESS}Success${T_RESET}"
+        echo -e '\n'
+
+        echo "${T_INFO}Checking static analysis (phpstan --bonus)${T_RESET}"
+        $CONSOLE_PREFIX_WITHOUT_TTY ./vendor/bin/phpstan analyse --configuration=phpstan.bonus.neon --no-progress --error-format=checkstyle $FILE_FILTER \
+            | $CONSOLE_PREFIX_WITHOUT_TTY ./vendor/bin/reviewdog -f=checkstyle -reporter=local -diff="git diff FETCH_HEAD" -fail-on-error 2> /dev/null \
+            && echo "${T_SUCCESS}Success${T_RESET}"
+    fi
+fi
