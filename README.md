@@ -2,6 +2,12 @@
 
 The files from this repository can be added to any PHP project to setup complete linting.
 
+The configuration is explicitly not using any baseline feature of linters.
+Instead, it uses a low level for required checks, and adds a bonus check with the highest levels.
+This way you are enticed, not required, to improve upon what you can handle.
+You should slowly increase the levels for the required checks.
+E.g. once a week bump the level and run through the whole code base.
+
 This repository works well together with [lode/playground](https://github.com/lode/playground).
 
 
