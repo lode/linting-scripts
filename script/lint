@@ -220,7 +220,7 @@ else
 
     echo "${T_INFO}Checking refactors (rector)${T_RESET}"
     echo "${T_WARNING}Rector might not produce correct results until phpstan is on level 4 on the master branch${T_RESET}"
-    ./vendor/bin/rector process --memory-limit=4g --dry-run $FILE_FILTER 2> /dev/null \
+    $CONSOLE_PREFIX ./vendor/bin/rector process --memory-limit=4g --dry-run $FILE_FILTER 2> /dev/null \
         && echo "${T_SUCCESS}Success${T_RESET}"
 
     if test "$HAS_BONUS" = 1; then
