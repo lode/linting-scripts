@@ -182,8 +182,12 @@ if test "$HAS_TYPE" = 1; then
         exit 1
     fi
 else
-    if test ! -z "$SYMFONY_PREFIX" && (test -n "$FILE_FILTER_TWIG" || test -n "$FILE_FILTER_YAML"); then
+    if test ! -z "$SYMFONY_PREFIX"; then
         echo -e "${T_BOLD}Running checks on the git changed lines between the base and the head branch${T_RESET}\n"
+
+        echo "${T_INFO}Checking container (symfony)${T_RESET}"
+        $SYMFONY_PREFIX lint:container 2> /dev/null && echo "${T_SUCCESS}Success${T_RESET}"
+        echo -e '\n'
 
         if test -n "$FILE_FILTER_TWIG"; then
             echo "${T_INFO}Checking twig templates (symfony)${T_RESET}"
